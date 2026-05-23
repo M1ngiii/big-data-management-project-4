@@ -1,8 +1,33 @@
-# Lab-only stack: Postgres + pgvector, MinIO (S3), Ollama (LLM).
-# Subset of the production docker-compose at the repo root — no Airflow,
-# because the notebook calls Postgres / MinIO / Ollama directly.
+# Full stack: Postgres + pgvector, MinIO (S3), Ollama (LLM), Airflow.
 #
-# Image versions are pinned for reproducibility, matching the production stack.
+# Image versions are pinned for reproducibility.
+# Run `make up` to start everything. See Makefile for all targets.
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${POSTGRES_USER:-rico}:${POSTGRES_PASSWORD:-rico}@postgres:5432/airflow"
+    AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW_FERNET_KEY:-ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=}"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    PYTHONPATH: /opt/airflow
+    # Pipeline connection details — service names resolve inside the Docker network.
+    POSTGRES_DSN: "postgresql://${POSTGRES_USER:-rico}:${POSTGRES_PASSWORD:-rico}@postgres:5432/${POSTGRES_DB:-rico}"
+    MINIO_URL: "http://minio:9000"
+    MINIO_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
+    MINIO_SECRET: "${MINIO_SECRET_KEY:-minioadmin}"
+    MINIO_BUCKET: "${MINIO_BUCKET:-rico-raw}"
+    OLLAMA_URL: "http://ollama:11434"
+    OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:3b}"
+    # Slack webhook — set in your shell or .env, never committed to git.
+    SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-}"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./tasks:/opt/airflow/tasks
+    - airflow-logs:/opt/airflow/logs
 
 services:
 
@@ -34,7 +59,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
       - "9000:9000"   # S3 API
-      - "9001:9001"   # web console (browse buckets at http://localhost:9001)
+      - "9001:9001"   # web console
     volumes:
       - minio-data:/data
     healthcheck:
@@ -44,7 +69,6 @@ services:
       retries: 20
 
   minio-init:
-    # Aligns mc client release with the server release above.
     image: minio/mc:RELEASE.2024-11-21T17-21-54Z
     depends_on:
       minio:
@@ -81,7 +105,46 @@ services:
       /bin/sh -c "ollama pull ${OLLAMA_MODEL:-qwen2.5:3b} && echo 'ollama model ready'"
     restart: "no"
 
+  # ── Airflow ──────────────────────────────────────────────────────────────────
+
+  airflow-init:
+    <<: *airflow-common
+    command: >-
+      bash -c "
+        airflow db migrate &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+        echo 'airflow init complete'
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   minio-data:
   ollama-data:
+  airflow-logs:

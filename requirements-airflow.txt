@@ -1,0 +1,26 @@
+# Extra packages installed on top of apache/airflow:2.10.5.
+# Do NOT list apache-airflow itself — it is already in the base image
+# and re-listing it risks a version conflict.
+
+# Airflow providers
+apache-airflow-providers-slack>=8.0
+
+# Infra clients (same pins as lab requirements.txt)
+psycopg[binary]>=3.2
+pgvector>=0.3
+boto3>=1.35
+requests>=2.32
+
+# HuggingFace / dataset streaming
+datasets<3
+huggingface_hub<0.24
+fsspec<2024.4
+
+# ML stack
+torch>=2.4
+open-clip-torch>=2.30
+sentence-transformers>=3.0
+
+# Utilities
+numpy>=1.26
+pillow>=10.0
