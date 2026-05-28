@@ -23,11 +23,13 @@ x-airflow-common: &airflow-common
     OLLAMA_URL: "http://ollama:11434"
     OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:3b}"
     GIT_SHA: "${GIT_SHA:-unknown}"
+    CHOSEN_SCREENS_PATH: "/opt/airflow/chosen_screens.txt"
     # Slack webhook — set in your shell or .env, never committed to git.
     SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-}"
   volumes:
     - ./dags:/opt/airflow/dags
     - ./tasks:/opt/airflow/tasks
+    - ./chosen_screens.txt:/opt/airflow/chosen_screens.txt:ro
     - airflow-logs:/opt/airflow/logs
 
 services:

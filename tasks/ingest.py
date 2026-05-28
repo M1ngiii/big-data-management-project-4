@@ -4,8 +4,10 @@ from __future__ import annotations
 import hashlib
 import itertools
 import logging
+import os
 import uuid
 from io import BytesIO
+from pathlib import Path
 
 import psycopg
 from datasets import load_dataset
@@ -13,6 +15,8 @@ from datasets import load_dataset
 from tasks.config import POSTGRES_DSN, MINIO_BUCKET, s3_client, record_task_duration, record_metric
 
 log = logging.getLogger(__name__)
+
+_CHOSEN_SCREENS_PATH = os.environ.get("CHOSEN_SCREENS_PATH", "/opt/airflow/chosen_screens.txt")
 
 _UPSERT_SQL = """
 INSERT INTO screens_metadata
@@ -79,7 +83,53 @@ def _stream_screens(limit: int) -> list[dict]:
         split="train",
         streaming=True,
     )
-    return list(itertools.islice(ds, limit))
+    chosen_ids = _chosen_screen_ids()[:limit]
+    if not chosen_ids:
+        return list(itertools.islice(ds, limit))
+
+    wanted_ids = set(chosen_ids)
+    chosen_rows: dict[int, dict] = {}
+    fallback_rows: list[dict] = []
+
+    for row in ds:
+        screen_id = int(row["screenId"])
+        if screen_id in wanted_ids:
+            chosen_rows.setdefault(screen_id, row)
+        elif len(fallback_rows) < limit:
+            fallback_rows.append(row)
+
+        if len(chosen_rows) == len(chosen_ids) and len(chosen_rows) + len(fallback_rows) >= limit:
+            break
+
+    rows = [chosen_rows[sid] for sid in chosen_ids if sid in chosen_rows]
+    row_ids = {int(row["screenId"]) for row in rows}
+    for row in fallback_rows:
+        if len(rows) >= limit:
+            break
+        screen_id = int(row["screenId"])
+        if screen_id not in row_ids:
+            rows.append(row)
+            row_ids.add(screen_id)
+
+    return rows[:limit]
+
+
+def _chosen_screen_ids() -> list[int]:
+    path = Path(_CHOSEN_SCREENS_PATH)
+    if not path.exists():
+        log.warning("chosen screens file not found at %s; using first streamed rows", path)
+        return []
+
+    ids: list[int] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        try:
+            ids.append(int(stripped.split()[0]))
+        except ValueError:
+            log.warning("ignoring invalid chosen screen line: %r", line)
+    return ids
 
 
 def _to_png_bytes(image) -> bytes:
