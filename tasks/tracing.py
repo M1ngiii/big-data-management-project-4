@@ -9,6 +9,7 @@ import psycopg
 
 from tasks.config import (
     POSTGRES_DSN, CLIP_MODEL_VERSION, SBERT_MODEL_VERSION, OLLAMA_MODEL, PROMPT_VERSION,
+    record_task_retries,
 )
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ def create_run(dag_run_id: str, limit: int, trigger: str) -> str:
         "[run_id=%s] pipeline started dag_run_id=%s limit=%d trigger=%s git_sha=%s",
         run_id, dag_run_id, limit, trigger, git_sha,
     )
+    record_task_retries(run_id, "setup")
     t_notify.run_started(run_id, limit, trigger)
     return run_id
 

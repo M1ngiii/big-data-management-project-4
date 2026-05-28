@@ -7,7 +7,7 @@ import uuid
 
 import psycopg
 
-from tasks.config import POSTGRES_DSN, MINIO_BUCKET, s3_client, record_task_duration
+from tasks.config import POSTGRES_DSN, MINIO_BUCKET, s3_client, record_task_duration, record_metric
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +15,10 @@ log = logging.getLogger(__name__)
 def run(run_id: str) -> dict[str, str]:
     """Return {str(screen_id): text_representation} for every screen in this run."""
     with record_task_duration(run_id, "parse"):
-        return _run(run_id)
+        result = _run(run_id)
+    record_metric(run_id, "task.parse.row_count_in", len(result))
+    record_metric(run_id, "task.parse.row_count_out", len(result))
+    return result
 
 
 def _run(run_id: str) -> dict[str, str]:

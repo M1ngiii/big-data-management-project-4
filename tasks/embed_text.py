@@ -24,6 +24,7 @@ ON CONFLICT (screen_id, model_name, model_version, embedding_kind) DO UPDATE SET
 
 
 def run(run_id: str, text_reps: dict) -> dict[str, int]:
+    record_metric(run_id, "task.embed_text.row_count_in", len(text_reps))
     with record_task_duration(run_id, "embed_text"):
         result = _run(run_id, text_reps)
     record_metric(run_id, "task.embed_text.row_count_out", result["embedded"])

@@ -76,10 +76,25 @@ def record_text_metric(run_id: str, metric_name: str, value: str) -> None:
         log.warning("could not record text metric %s: %s", metric_name, exc)
 
 
+def record_task_retries(run_id: str, task_name: str) -> None:
+    """Persist the number of completed retries for the current Airflow task."""
+    try:
+        from airflow.operators.python import get_current_context
+
+        ctx = get_current_context()
+        task_instance = ctx.get("ti")
+        try_number = getattr(task_instance, "try_number", 1)
+        retries = max(int(try_number) - 1, 0)
+        record_metric(run_id, f"task.{task_name}.retries", retries)
+    except Exception as exc:
+        log.debug("could not record retry count for task %s: %s", task_name, exc)
+
+
 @contextlib.contextmanager
 def record_task_duration(run_id: str, task_name: str):
     """Context manager that measures wall-clock duration and writes it to pipeline_metrics."""
     import psycopg
+    record_task_retries(run_id, task_name)
     t0 = time.perf_counter()
     try:
         yield

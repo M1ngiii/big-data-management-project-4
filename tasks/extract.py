@@ -48,6 +48,7 @@ VALUES (%s, %s, %s, %s, %s)
 
 
 def run(run_id: str, text_reps: dict) -> dict[str, int]:
+    record_metric(run_id, "task.extract.row_count_in", len(text_reps))
     with record_task_duration(run_id, "extract"):
         result = _run(run_id, text_reps)
     record_metric(run_id, "task.extract.row_count_out", result["extracted"])

@@ -23,7 +23,7 @@ import uuid
 
 import psycopg
 
-from tasks.config import POSTGRES_DSN, record_task_duration
+from tasks.config import POSTGRES_DSN, record_task_duration, record_metric
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ class AuditFailedError(Exception):
 
 def run(run_id: str) -> None:
     with record_task_duration(run_id, "audit"):
+        record_metric(run_id, "task.audit.row_count_in", _candidate_row_count(run_id))
         _run(run_id)
 
 
@@ -42,6 +43,7 @@ def _run(run_id: str) -> None:
     passed = len(duplicates) == 0
 
     _write_audit_result(run_id, passed, duplicates)
+    record_metric(run_id, "task.audit.row_count_out", 1)
 
     if not passed:
         _mark_paused(run_id)
@@ -116,6 +118,25 @@ def _find_duplicates(run_id: str) -> list[dict]:
             })
 
     return dupes
+
+
+def _candidate_row_count(run_id: str) -> int:
+    rid = uuid.UUID(run_id)
+    with psycopg.connect(POSTGRES_DSN) as conn, conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*)::int FROM screens_metadata WHERE run_id = %s", (rid,))
+        metadata_count = cur.fetchone()[0]
+        cur.execute(
+            """
+            SELECT COUNT(*)::int
+            FROM screens_embeddings
+            WHERE screen_id IN (
+                SELECT screen_id FROM screens_metadata WHERE run_id = %s
+            )
+            """,
+            (rid,),
+        )
+        embedding_count = cur.fetchone()[0]
+    return metadata_count + embedding_count
 
 
 # ── Side effects on failure ───────────────────────────────────────────────────

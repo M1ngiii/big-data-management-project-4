@@ -7,7 +7,7 @@ import uuid
 import psycopg
 from pgvector.psycopg import register_vector
 
-from tasks.config import POSTGRES_DSN, SBERT_MODEL_VERSION, record_task_duration
+from tasks.config import POSTGRES_DSN, SBERT_MODEL_VERSION, record_task_duration, record_metric
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +22,11 @@ LIMIT %s
 
 def run(run_id: str) -> dict[str, float]:
     with record_task_duration(run_id, "eval"):
-        return _run(run_id)
+        result = _run(run_id)
+    n_queries = int(result["n_queries"])
+    record_metric(run_id, "task.eval.row_count_in", n_queries)
+    record_metric(run_id, "task.eval.row_count_out", 1 if n_queries else 0)
+    return result
 
 
 def _run(run_id: str) -> dict[str, float]:
@@ -45,7 +49,7 @@ def _run(run_id: str) -> dict[str, float]:
 
             if not rows:
                 log.warning("[run_id=%s] eval: no text vectors found", run_id)
-                return {"recall_at_5": 0.0}
+                return {"recall_at_5": 0.0, "n_queries": 0}
 
             k = min(5, len(rows))
             hits = 0
@@ -74,4 +78,4 @@ def _run(run_id: str) -> dict[str, float]:
         "[run_id=%s] eval recall@%d=%.3f (self-test, n=%d)",
         run_id, k, recall, len(rows),
     )
-    return {"recall_at_5": recall}
+    return {"recall_at_5": recall, "n_queries": len(rows)}

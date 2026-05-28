@@ -33,6 +33,7 @@ ON CONFLICT (screen_id, model_name, model_version, embedding_kind) DO UPDATE SET
 def run(run_id: str) -> dict[str, int]:
     with record_task_duration(run_id, "embed_image"):
         result = _run(run_id)
+    record_metric(run_id, "task.embed_image.row_count_in", result["input"])
     record_metric(run_id, "task.embed_image.row_count_out", result["embedded"])
     return result
 
@@ -51,7 +52,7 @@ def _run(run_id: str) -> dict[str, int]:
 
     if not screens:
         log.warning("[run_id=%s] embed_image: no screens found for this run", run_id)
-        return {"embedded": 0}
+        return {"input": 0, "embedded": 0}
 
     model, _, preprocess = open_clip.create_model_and_transforms(CLIP_ARCH, pretrained=CLIP_PRETRAINED)
     model.eval()
@@ -83,4 +84,4 @@ def _run(run_id: str) -> dict[str, int]:
         conn.commit()
 
     log.info("[run_id=%s] embed_image done embedded=%d", run_id, len(screen_ids))
-    return {"embedded": len(screen_ids)}
+    return {"input": len(screens), "embedded": len(screen_ids)}

@@ -29,6 +29,7 @@ ON CONFLICT (screen_id) DO UPDATE SET
 
 
 def run(run_id: str, limit: int) -> dict[str, int]:
+    record_metric(run_id, "task.ingest.row_count_in", limit)
     with record_task_duration(run_id, "ingest"):
         result = _run(run_id, limit)
     record_metric(run_id, "task.ingest.row_count_out", result["ingested"])

@@ -6,7 +6,7 @@ import uuid
 
 import psycopg
 
-from tasks.config import POSTGRES_DSN, record_task_duration
+from tasks.config import POSTGRES_DSN, record_task_duration, record_metric
 
 log = logging.getLogger(__name__)
 
@@ -15,6 +15,8 @@ def run(run_id: str) -> dict:
     with record_task_duration(run_id, "load"):
         metrics = _collect_metrics(run_id)
         _persist_metrics(run_id, metrics)
+        record_metric(run_id, "task.load.row_count_in", _load_row_count_in(metrics))
+        record_metric(run_id, "task.load.row_count_out", len(metrics))
         _log_summary(run_id, metrics)
         log.info("[run_id=%s] load done", run_id)
         return metrics
@@ -163,6 +165,14 @@ def _metric(m: dict, name: str) -> float:
 
 def _int_metric(m: dict, name: str) -> int:
     return int(_metric(m, name))
+
+
+def _load_row_count_in(m: dict) -> int:
+    return (
+        _int_metric(m, "meta.row_count")
+        + _int_metric(m, "emb.image.row_count")
+        + _int_metric(m, "emb.text.row_count")
+    )
 
 
 def _pct(num: int, denom: int) -> float:
