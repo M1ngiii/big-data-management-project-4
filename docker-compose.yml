@@ -22,6 +22,7 @@ x-airflow-common: &airflow-common
     MINIO_BUCKET: "${MINIO_BUCKET:-rico-raw}"
     OLLAMA_URL: "http://ollama:11434"
     OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:3b}"
+    GIT_SHA: "${GIT_SHA:-unknown}"
     # Slack webhook — set in your shell or .env, never committed to git.
     SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-}"
   volumes:

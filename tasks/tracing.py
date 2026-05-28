@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import uuid
 
@@ -110,6 +111,10 @@ def finish_run_if_not_terminal(run_id: str, status: str) -> None:
 
 
 def _git_sha() -> str:
+    from_env = os.environ.get("GIT_SHA", "").strip()
+    if from_env:
+        return from_env
+
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
