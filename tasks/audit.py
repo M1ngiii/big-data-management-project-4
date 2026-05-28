@@ -181,6 +181,16 @@ def _mark_paused(run_id: str) -> None:
 def _notify_slack(run_id: str, duplicates: list[dict]) -> None:
     try:
         import tasks.notify as t_notify
-        t_notify.audit_failed(run_id, duplicates)
+        t_notify.audit_failed(run_id, duplicates, log_url=_airflow_log_url())
     except Exception as exc:
         log.warning("[run_id=%s] Slack audit notification failed (non-fatal): %s", run_id, exc)
+
+
+def _airflow_log_url() -> str:
+    try:
+        from airflow.operators.python import get_current_context
+
+        task_instance = get_current_context().get("ti")
+        return getattr(task_instance, "log_url", "") or ""
+    except Exception:
+        return ""
