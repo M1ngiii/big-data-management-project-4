@@ -1,6 +1,7 @@
 """Eval stage: recall@5 self-test against SBERT text vectors → screens_eval."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 
@@ -35,11 +36,12 @@ def _run(run_id: str) -> dict[str, float]:
     with psycopg.connect(POSTGRES_DSN) as conn:
         register_vector(conn)
         with conn.cursor() as cur:
+            _ensure_eval_schema(cur)
 
             # Fetch text vectors for this run's screens.
             cur.execute(
                 """
-                SELECT screen_id, vector FROM screens_embeddings
+                SELECT screen_id, vector, source_fingerprint FROM screens_embeddings
                 WHERE run_id = %s AND embedding_kind = 'text'
                 ORDER BY screen_id
                 """,
@@ -53,9 +55,10 @@ def _run(run_id: str) -> dict[str, float]:
 
             k = min(5, len(rows))
             hits = 0
+            eval_fingerprint = _eval_fingerprint(rows)
 
             # Self-test: query each screen with its own vector; it must appear in top-k.
-            for expected_id, vec in rows:
+            for expected_id, vec, _source_fingerprint in rows:
                 cur.execute(_NEAREST_SQL, (rid, vec, k))
                 top_k = [r[0] for r in cur.fetchall()]
                 if expected_id in top_k:
@@ -63,14 +66,20 @@ def _run(run_id: str) -> dict[str, float]:
 
             recall = hits / len(rows)
 
-            # Idempotent: delete any prior eval rows for this run before inserting.
-            cur.execute("DELETE FROM screens_eval WHERE run_id = %s", (rid,))
             cur.execute(
                 """
-                INSERT INTO screens_eval (embedding_model_version, n_queries, recall_at_5, run_id)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO screens_eval
+                    (embedding_model_version, n_queries, recall_at_5, run_id, source_fingerprint)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (embedding_model_version, source_fingerprint)
+                    WHERE source_fingerprint IS NOT NULL
+                DO UPDATE SET
+                    n_queries   = EXCLUDED.n_queries,
+                    recall_at_5 = EXCLUDED.recall_at_5,
+                    run_id      = EXCLUDED.run_id,
+                    created_at  = NOW()
                 """,
-                (SBERT_MODEL_VERSION, len(rows), recall, rid),
+                (SBERT_MODEL_VERSION, len(rows), recall, rid, eval_fingerprint),
             )
             conn.commit()
 
@@ -79,3 +88,27 @@ def _run(run_id: str) -> dict[str, float]:
         run_id, k, recall, len(rows),
     )
     return {"recall_at_5": recall, "n_queries": len(rows)}
+
+
+def _eval_fingerprint(rows: list[tuple]) -> str:
+    material = "|".join(
+        f"{screen_id}:{source_fingerprint or ''}"
+        for screen_id, _vec, source_fingerprint in rows
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _ensure_eval_schema(cur) -> None:
+    cur.execute(
+        """
+        ALTER TABLE screens_eval
+            ADD COLUMN IF NOT EXISTS source_fingerprint TEXT
+        """
+    )
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS screens_eval_model_source_uq
+            ON screens_eval (embedding_model_version, source_fingerprint)
+            WHERE source_fingerprint IS NOT NULL
+        """
+    )
