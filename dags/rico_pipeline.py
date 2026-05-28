@@ -71,7 +71,8 @@ def _on_dag_success(context: dict) -> None:
     run_id, duration_s = _lookup_run_id_and_duration(dag_run.run_id)
     if run_id:
         t_tracing.finish_run(run_id, "succeeded")
-        t_notify.run_finished(run_id, "succeeded", duration_s, "")
+        summary = t_load.summary_for_run(run_id)
+        t_notify.run_finished(run_id, "succeeded", duration_s, summary)
 
 
 def _lookup_final_status(airflow_run_id: str) -> str:
@@ -98,7 +99,8 @@ def _on_dag_failure(context: dict) -> None:
         # Don't overwrite 'paused-by-audit' — the audit task sets that itself.
         t_tracing.finish_run_if_not_terminal(run_id, "failed")
         actual_status = _lookup_final_status(dag_run.run_id)
-        t_notify.run_finished(run_id, actual_status, duration_s, "")
+        summary = t_load.summary_for_run(run_id)
+        t_notify.run_finished(run_id, actual_status, duration_s, summary)
 
 
 # ── DAG definition ────────────────────────────────────────────────────────────

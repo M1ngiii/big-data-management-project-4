@@ -20,6 +20,26 @@ def run(run_id: str) -> dict:
         return metrics
 
 
+def summary_for_run(run_id: str) -> str:
+    """Return the one-line metrics summary used in end-of-run notifications."""
+    try:
+        rid = uuid.UUID(run_id)
+        with psycopg.connect(POSTGRES_DSN) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT metric_name, metric_value
+                FROM pipeline_metrics
+                WHERE run_id = %s AND metric_value IS NOT NULL
+                """,
+                (rid,),
+            )
+            metrics = {name: value for name, value in cur.fetchall()}
+        return _format_summary(metrics)
+    except Exception as exc:
+        log.warning("[run_id=%s] could not build metrics summary: %s", run_id, exc)
+        return ""
+
+
 # ── Metric collection ─────────────────────────────────────────────────────────
 
 def _collect_metrics(run_id: str) -> dict:
@@ -107,21 +127,40 @@ def _persist_metrics(run_id: str, metrics: dict) -> None:
 # ── Log summary ───────────────────────────────────────────────────────────────
 
 def _log_summary(run_id: str, m: dict) -> None:
-    log.info(
-        "[run_id=%s] RUN METRICS | "
-        "screens=%s  extracted=%.0f%%  high_conf=%.0f%%  review_queue=%.0f%%  "
-        "img_rows=%s  txt_rows=%s  "
-        "img_dims_ok=%s  txt_dims_ok=%s",
-        run_id,
-        int(m.get("meta.row_count", 0)),
-        m.get("meta.pct_extracted", 0),
-        m.get("meta.pct_high_confidence", 0),
-        m.get("meta.pct_review_queue", 0),
-        int(m.get("emb.image.row_count", 0)),
-        int(m.get("emb.text.row_count", 0)),
-        bool(m.get("emb.image.dims_consistent", 0)),
-        bool(m.get("emb.text.dims_consistent", 0)),
+    log.info("[run_id=%s] RUN METRICS | %s", run_id, _format_summary(m))
+
+
+def _format_summary(m: dict) -> str:
+    if not m:
+        return ""
+
+    image_dims_ok = bool(_metric(m, "emb.image.dims_consistent"))
+    text_dims_ok = bool(_metric(m, "emb.text.dims_consistent"))
+    zero_norm_pct = max(
+        _metric(m, "emb.image.pct_zero_norm"),
+        _metric(m, "emb.text.pct_zero_norm"),
     )
+
+    return (
+        f"screens={_int_metric(m, 'meta.row_count')} "
+        f"extracted={_metric(m, 'meta.pct_extracted'):.0f}% "
+        f"high_conf={_metric(m, 'meta.pct_high_confidence'):.0f}% "
+        f"review_queue={_metric(m, 'meta.pct_review_queue'):.0f}% "
+        f"packages={_int_metric(m, 'meta.distinct_packages')} "
+        f"categories={_int_metric(m, 'meta.distinct_categories')} "
+        f"image_rows={_int_metric(m, 'emb.image.row_count')} "
+        f"text_rows={_int_metric(m, 'emb.text.row_count')} "
+        f"dims_ok={str(image_dims_ok and text_dims_ok).lower()} "
+        f"zero_norm={zero_norm_pct:.0f}%"
+    )
+
+
+def _metric(m: dict, name: str) -> float:
+    return float(m.get(name) or 0.0)
+
+
+def _int_metric(m: dict, name: str) -> int:
+    return int(_metric(m, name))
 
 
 def _pct(num: int, denom: int) -> float:
