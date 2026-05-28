@@ -62,6 +62,10 @@ ALTER TABLE screens_review_queue
     ADD COLUMN IF NOT EXISTS run_id             UUID REFERENCES pipeline_runs(run_id),
     ADD COLUMN IF NOT EXISTS source_fingerprint TEXT;
 
+CREATE UNIQUE INDEX IF NOT EXISTS screens_review_queue_source_reason_uq
+    ON screens_review_queue (screen_id, source_fingerprint, reason)
+    WHERE source_fingerprint IS NOT NULL;
+
 -- screens_eval: tag eval results to the run/input that computed them.
 ALTER TABLE screens_eval
     ADD COLUMN IF NOT EXISTS run_id UUID REFERENCES pipeline_runs(run_id),

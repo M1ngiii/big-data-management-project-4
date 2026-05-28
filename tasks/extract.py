@@ -44,6 +44,12 @@ WHERE screen_id = %s
 _INSERT_REVIEW_SQL = """
 INSERT INTO screens_review_queue (screen_id, reason, raw_output, run_id, source_fingerprint)
 VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT (screen_id, source_fingerprint, reason)
+    WHERE source_fingerprint IS NOT NULL
+DO UPDATE SET
+    raw_output = EXCLUDED.raw_output,
+    run_id     = EXCLUDED.run_id,
+    created_at = NOW()
 """
 
 
@@ -60,6 +66,7 @@ def _run(run_id: str, text_reps: dict) -> dict[str, int]:
     extracted, queued = 0, 0
 
     with psycopg.connect(POSTGRES_DSN) as conn, conn.cursor() as cur:
+        _ensure_review_queue_schema(cur)
         for sid_str, text in text_reps.items():
             screen_id   = int(sid_str)
             fingerprint = hashlib.sha256(text.encode()).hexdigest()
@@ -93,4 +100,13 @@ def _run(run_id: str, text_reps: dict) -> dict[str, int]:
     log.info("[run_id=%s] extract done extracted=%d queued=%d", run_id, extracted, queued)
     return {"extracted": extracted, "queued": queued}
 
+
+def _ensure_review_queue_schema(cur) -> None:
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS screens_review_queue_source_reason_uq
+            ON screens_review_queue (screen_id, source_fingerprint, reason)
+            WHERE source_fingerprint IS NOT NULL
+        """
+    )
 
