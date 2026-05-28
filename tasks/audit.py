@@ -140,7 +140,7 @@ def _write_audit_result(run_id: str, passed: bool, duplicates: list[dict]) -> No
 
 
 def _mark_paused(run_id: str) -> None:
-    from tasks.config import record_metric
+    from tasks.config import record_metric, record_text_metric
     rid = uuid.UUID(run_id)
     with psycopg.connect(POSTGRES_DSN) as conn, conn.cursor() as cur:
         cur.execute(
@@ -154,6 +154,7 @@ def _mark_paused(run_id: str) -> None:
         conn.commit()
     if row:
         record_metric(run_id, "run.total_duration_s", row[0] or 0.0)
+        record_text_metric(run_id, "run.final_status", "paused-by-audit")
 
 
 def _notify_slack(run_id: str, duplicates: list[dict]) -> None:

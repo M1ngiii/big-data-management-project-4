@@ -55,7 +55,7 @@ def create_run(dag_run_id: str, limit: int, trigger: str) -> str:
 
 def finish_run(run_id: str, status: str) -> None:
     """Set ended_at=NOW() and status unconditionally; persist total duration metric."""
-    from tasks.config import record_metric
+    from tasks.config import record_metric, record_text_metric
     rid = uuid.UUID(run_id)
     with psycopg.connect(POSTGRES_DSN) as conn, conn.cursor() as cur:
         cur.execute(
@@ -69,6 +69,7 @@ def finish_run(run_id: str, status: str) -> None:
         conn.commit()
     duration_s = row[0] if row else 0.0
     record_metric(run_id, "run.total_duration_s", duration_s)
+    record_text_metric(run_id, "run.final_status", status)
     log.info("[run_id=%s] pipeline finished status=%s", run_id, status)
 
 
@@ -78,21 +79,32 @@ def finish_run_if_not_terminal(run_id: str, status: str) -> None:
     Prevents the DAG failure callback from overwriting 'paused-by-audit' that the
     audit task sets before it raises.
     """
-    from tasks.config import record_metric
+    from tasks.config import record_metric, record_text_metric
     rid = uuid.UUID(run_id)
     with psycopg.connect(POSTGRES_DSN) as conn, conn.cursor() as cur:
         cur.execute(
             """
             UPDATE pipeline_runs SET ended_at = NOW(), status = %s
             WHERE run_id = %s AND status NOT IN ('paused-by-audit', 'failed')
-            RETURNING EXTRACT(EPOCH FROM (ended_at - started_at))::float
+            RETURNING EXTRACT(EPOCH FROM (ended_at - started_at))::float, status
             """,
             (status, rid),
         )
         row = cur.fetchone()
+        if not row:
+            cur.execute(
+                """
+                SELECT EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at))::float, status
+                FROM pipeline_runs WHERE run_id = %s
+                """,
+                (rid,),
+            )
+            row = cur.fetchone()
         conn.commit()
     if row:
-        record_metric(run_id, "run.total_duration_s", row[0] or 0.0)
+        duration_s, final_status = row
+        record_metric(run_id, "run.total_duration_s", duration_s or 0.0)
+        record_text_metric(run_id, "run.final_status", final_status)
 
 
 def _git_sha() -> str:

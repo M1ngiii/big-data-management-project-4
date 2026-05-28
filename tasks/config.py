@@ -55,6 +55,27 @@ def record_metric(run_id: str, metric_name: str, value: float) -> None:
         log.warning("could not record metric %s: %s", metric_name, exc)
 
 
+def record_text_metric(run_id: str, metric_name: str, value: str) -> None:
+    """Persist a single text metric to pipeline_metrics (non-fatal on error)."""
+    import psycopg
+    try:
+        rid = uuid.UUID(run_id)
+        with psycopg.connect(POSTGRES_DSN) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO pipeline_metrics (run_id, metric_name, metric_text)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (run_id, metric_name) DO UPDATE
+                    SET metric_text = EXCLUDED.metric_text,
+                        metric_value = NULL
+                """,
+                (rid, metric_name, value),
+            )
+            conn.commit()
+    except Exception as exc:
+        log.warning("could not record text metric %s: %s", metric_name, exc)
+
+
 @contextlib.contextmanager
 def record_task_duration(run_id: str, task_name: str):
     """Context manager that measures wall-clock duration and writes it to pipeline_metrics."""

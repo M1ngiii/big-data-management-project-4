@@ -83,6 +83,7 @@ def _collect_metrics(run_id: str) -> dict:
                 COUNT(*)::int,
                 MIN(vector_dims(vector))::int,
                 MAX(vector_dims(vector))::int,
+                AVG(vector_dims(vector))::float,
                 COUNT(CASE WHEN (vector <#> vector) = 0.0 THEN 1 END)::int
             FROM screens_embeddings
             WHERE run_id = %s
@@ -90,11 +91,12 @@ def _collect_metrics(run_id: str) -> dict:
             """,
             (rid,),
         )
-        for ver, kind, n, min_d, max_d, zero_n in cur.fetchall():
+        for ver, kind, n, min_d, max_d, avg_d, zero_n in cur.fetchall():
             tag = f"emb.{kind}"
             m[f"{tag}.row_count"]      = n
             m[f"{tag}.min_dims"]       = min_d
             m[f"{tag}.max_dims"]       = max_d
+            m[f"{tag}.avg_dims"]       = avg_d
             m[f"{tag}.dims_consistent"] = 1.0 if min_d == max_d else 0.0
             m[f"{tag}.pct_zero_norm"]  = _pct(zero_n, n)
             if min_d != max_d:
