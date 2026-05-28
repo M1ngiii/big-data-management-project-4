@@ -95,12 +95,19 @@ def _collect_metrics(run_id: str) -> dict:
         )
         for ver, kind, n, min_d, max_d, avg_d, zero_n in cur.fetchall():
             tag = f"emb.{kind}"
+            version_tag = f"emb.{_metric_token(ver)}.{kind}"
             m[f"{tag}.row_count"]      = n
             m[f"{tag}.min_dims"]       = min_d
             m[f"{tag}.max_dims"]       = max_d
             m[f"{tag}.avg_dims"]       = avg_d
             m[f"{tag}.dims_consistent"] = 1.0 if min_d == max_d else 0.0
             m[f"{tag}.pct_zero_norm"]  = _pct(zero_n, n)
+            m[f"{version_tag}.row_count"]      = n
+            m[f"{version_tag}.min_dims"]       = min_d
+            m[f"{version_tag}.max_dims"]       = max_d
+            m[f"{version_tag}.avg_dims"]       = avg_d
+            m[f"{version_tag}.dims_consistent"] = 1.0 if min_d == max_d else 0.0
+            m[f"{version_tag}.pct_zero_norm"]  = _pct(zero_n, n)
             if min_d != max_d:
                 log.warning(
                     "[run_id=%s] inconsistent vector dims for %s/%s: min=%d max=%d",
@@ -165,6 +172,10 @@ def _metric(m: dict, name: str) -> float:
 
 def _int_metric(m: dict, name: str) -> int:
     return int(_metric(m, name))
+
+
+def _metric_token(value: str) -> str:
+    return value.replace("/", "_").replace(" ", "_")
 
 
 def _load_row_count_in(m: dict) -> int:
