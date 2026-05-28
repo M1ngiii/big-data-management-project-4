@@ -161,7 +161,7 @@ def rico_pipeline() -> None:
     def load(pipeline_run_id: str) -> dict:
         return t_load.run(pipeline_run_id)
 
-    @task
+    @task(retries=0)
     def audit(pipeline_run_id: str) -> None:
         """Duplicate-detection circuit breaker. Raises on violations — halts the DAG."""
         t_audit.run(pipeline_run_id)
