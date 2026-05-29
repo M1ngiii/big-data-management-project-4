@@ -439,7 +439,7 @@ docker compose logs --tail=150 airflow-scheduler
 docker compose exec airflow-scheduler airflow dags list-import-errors
 ```
 
-**git_sha is unknown.**
+**GIT_sha is unknown.**
 
 Set `GIT_SHA` before recreating Airflow.
 
@@ -475,7 +475,7 @@ DELETE FROM screens_embeddings
 WHERE model_name LIKE '%-duplicate';
 ```
 
-**relation "pipeline_runs" does not exist on first run.**
+**Relation "pipeline_runs" does not exist on first run.**
 
 The Postgres init scripts only run on a completely empty volume. If the volume
 already existed before the migrations were added, the tables will be missing.
