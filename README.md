@@ -116,7 +116,15 @@ docker compose up -d --force-recreate airflow-webserver airflow-scheduler
 
 ## Run The DAG
 
-In Airflow:
+After `make up`, wait a minute or two before triggering the DAG. The `ollama-init`
+container pulls the LLM model in the background and the `extract` task will fail
+if the model is not ready yet. You can check progress with:
+
+```bash
+docker compose logs ollama-init
+```
+
+Once you see `ollama model ready`, open Airflow:
 
 1. Open `rico_pipeline`.
 2. Unpause the DAG if needed.
@@ -392,19 +400,25 @@ Expected:
 
 ## Reset And Cleanup
 
+Truncate all pipeline tables and clear the MinIO bucket, keeping Docker volumes intact:
+
+```bash
+make reset
+```
+
 Stop services, preserving volumes:
 
 ```bash
 docker compose down
 ```
 
-Full wipe:
+Full wipe (removes all volumes — re-runs migrations on next `make up`):
 
 ```bash
-docker compose down -v
+make clean
 ```
 
-Truncate pipeline state manually:
+Truncate pipeline state manually without using make:
 
 ```bash
 docker compose exec postgres psql -U rico -d rico
@@ -425,7 +439,7 @@ docker compose logs --tail=150 airflow-scheduler
 docker compose exec airflow-scheduler airflow dags list-import-errors
 ```
 
-**`git_sha` is `unknown`.**
+**git_sha is unknown.**
 
 Set `GIT_SHA` before recreating Airflow.
 
@@ -461,7 +475,7 @@ DELETE FROM screens_embeddings
 WHERE model_name LIKE '%-duplicate';
 ```
 
-**`relation "pipeline_runs" does not exist` on first run.**
+**relation "pipeline_runs" does not exist on first run.**
 
 The Postgres init scripts only run on a completely empty volume. If the volume
 already existed before the migrations were added, the tables will be missing.
@@ -489,4 +503,5 @@ SBERT. Later runs are faster.
 | `Dockerfile.airflow` | Airflow image with pipeline dependencies |
 | `requirements-airflow.txt` | Packages installed in the Airflow image |
 | `chosen_screens.txt` | Curated diverse demo screens |
+| `pyproject.toml` | Package metadata for the `tasks/` module |
 | `.env.example` | Safe environment template |
