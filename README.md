@@ -34,7 +34,7 @@ Main stores:
 
 Install locally:
 
-- Docker Desktop
+- Docker (Docker Desktop on Mac/Windows; Docker Engine + Compose plugin on Linux)
 - Git
 - Python 3.11, only needed for notebook/local development
 
@@ -55,15 +55,19 @@ Important variables:
 | `OLLAMA_MODEL` | Defaults to `qwen2.5:3b`. |
 | `MINIO_BUCKET` | Defaults to `rico-raw`. |
 
-On Windows `cmd`, set the current commit before starting Airflow:
+Set these in your shell before running `make up`, or add them to your `.env` file.
+
+Linux / macOS:
+
+```bash
+export GIT_SHA=$(git rev-parse HEAD)
+export SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+Windows `cmd`:
 
 ```cmd
 for /f %i in ('git rev-parse HEAD') do set GIT_SHA=%i
-```
-
-Set Slack in the same shell, without committing it:
-
-```cmd
 set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
@@ -71,7 +75,13 @@ set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 
 From the repo root:
 
-```cmd
+```bash
+make up
+```
+
+Or manually run all the services:
+
+```bash
 docker compose up -d --wait postgres minio ollama
 docker compose up -d minio-init ollama-init
 docker compose run --rm airflow-init
@@ -80,7 +90,7 @@ docker compose up -d airflow-webserver airflow-scheduler
 
 Check containers:
 
-```cmd
+```bash
 docker compose ps
 ```
 
@@ -100,7 +110,7 @@ minioadmin / minioadmin
 
 If you change mounted files or environment variables, recreate Airflow:
 
-```cmd
+```bash
 docker compose up -d --force-recreate airflow-webserver airflow-scheduler
 ```
 
@@ -126,7 +136,7 @@ useful in a small demo.
 
 For `LIMIT=5`, a healthy run should produce:
 
-| Table | Expected new/current behavior |
+| Table | Expected rows |
 | --- | --- |
 | `pipeline_runs` | one row for the DAG run |
 | `screens_metadata` | 5 rows |
@@ -137,7 +147,7 @@ For `LIMIT=5`, a healthy run should produce:
 
 Use:
 
-```cmd
+```bash
 docker compose exec postgres psql -U rico -d rico
 ```
 
@@ -169,7 +179,7 @@ Expected for `LIMIT=5`: five distinct packages and categories.
 
 ## Idempotency
 
-Re-triggering the DAG with the same `LIMIT=5` should not duplicate destination
+Re-triggering the DAG with the same `LIMIT=5` does not duplicate destination
 data:
 
 - `screens_metadata` upserts by `screen_id`.
@@ -189,8 +199,7 @@ GROUP BY embedding_model_version, source_fingerprint
 ORDER BY n DESC;
 ```
 
-For repeated `LIMIT=5` runs with the same model/input, the grouped count should
-stay `1`.
+For repeated `LIMIT=5` runs with the same model/input, the grouped count stays at `1`.
 
 ## Traceability
 
@@ -371,7 +380,7 @@ pipeline logs a warning or skips the post, but the DAG work continues.
 
 Quick webhook smoke test:
 
-```cmd
+```bash
 docker compose exec airflow-scheduler python -c "import os, requests; r=requests.post(os.environ['SLACK_WEBHOOK_URL'], json={'text':'RICO pipeline webhook smoke test'}, timeout=10); print(r.status_code, r.text[:200])"
 ```
 
@@ -385,19 +394,19 @@ Expected:
 
 Stop services, preserving volumes:
 
-```cmd
+```bash
 docker compose down
 ```
 
 Full wipe:
 
-```cmd
+```bash
 docker compose down -v
 ```
 
 Truncate pipeline state manually:
 
-```cmd
+```bash
 docker compose exec postgres psql -U rico -d rico
 ```
 
@@ -411,14 +420,23 @@ RESTART IDENTITY CASCADE;
 
 **DAG does not appear or has import errors.**
 
-```cmd
+```bash
 docker compose logs --tail=150 airflow-scheduler
 docker compose exec airflow-scheduler airflow dags list-import-errors
 ```
 
 **`git_sha` is `unknown`.**
 
-Set `GIT_SHA` before recreating Airflow:
+Set `GIT_SHA` before recreating Airflow.
+
+Linux / macOS:
+
+```bash
+export GIT_SHA=$(git rev-parse HEAD)
+docker compose up -d --force-recreate airflow-webserver airflow-scheduler
+```
+
+Windows `cmd`:
 
 ```cmd
 for /f %i in ('git rev-parse HEAD') do set GIT_SHA=%i
@@ -429,7 +447,7 @@ docker compose up -d --force-recreate airflow-webserver airflow-scheduler
 
 Confirm Airflow sees the webhook:
 
-```cmd
+```bash
 docker compose exec airflow-scheduler python -c "import os; print(bool(os.getenv('SLACK_WEBHOOK_URL')))"
 ```
 
@@ -441,6 +459,17 @@ deliberate duplicate with:
 ```sql
 DELETE FROM screens_embeddings
 WHERE model_name LIKE '%-duplicate';
+```
+
+**`relation "pipeline_runs" does not exist` on first run.**
+
+The Postgres init scripts only run on a completely empty volume. If the volume
+already existed before the migrations were added, the tables will be missing.
+Fix with a full wipe and restart:
+
+```bash
+make clean
+make up
 ```
 
 **First run is slow.**
